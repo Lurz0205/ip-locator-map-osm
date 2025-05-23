@@ -10,7 +10,6 @@ async function initMap() {
         const response = await fetch('/api/get-ip-location');
         const data = await response.json(); // Phân tích phản hồi JSON
 
-        // Kiểm tra nếu có lỗi từ backend
         if (data.error) {
             console.error("Lỗi khi định vị IP:", data.error);
             // Hiển thị thông báo lỗi trên khu vực bản đồ
@@ -39,7 +38,7 @@ async function initMap() {
             map.setView(userLocation, 12);
         }
 
-        // Tạo hoặc cập nhật marker trên bản đồ
+        // Tạo hoặc cập nhật marker
         if (marker) {
             // Nếu marker đã tồn tại, cập nhật vị trí của nó
             marker.setLatLng(userLocation);
@@ -80,5 +79,52 @@ function updateLocationInfo(ip, city, region, country) {
     document.getElementById('display-country').innerText = country;
 }
 
+// Hàm mới để gọi API Gemini và tạo mô tả địa điểm
+async function generateLocationDescription() {
+    const describeBtn = document.getElementById('describe-location-btn');
+    const descriptionBox = document.getElementById('location-description');
+    const city = document.getElementById('display-city').innerText;
+    const country = document.getElementById('display-country').innerText;
+
+    // Kiểm tra nếu thông tin vị trí chưa được tải
+    if (city === 'Đang tải...' || country === 'Đang tải...') {
+        descriptionBox.innerHTML = '<p class="error-message">Vui lòng đợi thông tin vị trí được tải xong.</p>';
+        return;
+    }
+
+    descriptionBox.innerHTML = '<p>Đang tạo mô tả... ✨</p>'; // Hiển thị trạng thái tải
+    describeBtn.disabled = true; // Vô hiệu hóa nút trong khi đang xử lý
+
+    try {
+        const response = await fetch('/api/describe-location', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ city, country }) // Gửi thành phố và quốc gia đến backend
+        });
+        const data = await response.json();
+
+        if (data.error) {
+            descriptionBox.innerHTML = `<p class="error-message">Lỗi: ${data.error}</p>`;
+        } else {
+            descriptionBox.innerHTML = `<p>${data.description}</p>`; // Hiển thị mô tả
+        }
+    } catch (error) {
+        console.error("Lỗi khi tạo mô tả địa điểm:", error);
+        descriptionBox.innerHTML = '<p class="error-message">Đã xảy ra lỗi khi tạo mô tả. Vui lòng thử lại.</p>';
+    } finally {
+        describeBtn.disabled = false; // Kích hoạt lại nút
+    }
+}
+
 // Lắng nghe sự kiện DOMContentLoaded để đảm bảo HTML đã được tải đầy đủ trước khi chạy script
-document.addEventListener('DOMContentLoaded', initMap);
+document.addEventListener('DOMContentLoaded', () => {
+    initMap(); // Khởi tạo bản đồ khi DOM đã sẵn sàng
+
+    // Gắn sự kiện click cho nút "Mô tả địa điểm"
+    const describeBtn = document.getElementById('describe-location-btn');
+    if (describeBtn) {
+        describeBtn.addEventListener('click', generateLocationDescription);
+    }
+});
