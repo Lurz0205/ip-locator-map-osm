@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trang quản lý IP Logs</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* CSS cụ thể cho trang admin logs */
+        #ip-logs-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        #ip-logs-table th, #ip-logs-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        #ip-logs-table th {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+
+        #ip-logs-table tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+
+        #ip-logs-table tr:hover {
+            background-color: #ddd;
+        }
+
+        #loading-message {
+            text-align: center;
+            font-size: 1.2em;
+            color: #555;
+            margin-top: 20px;
+        }
+
+        .container {
+            text-align: left; /* Ghi đè căn giữa của container chính */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Danh sách IP Logs</h1>
+        <div id="loading-message">Đang tải dữ liệu IP...</div>
+        <table id="ip-logs-table">
+            <thead>
+                <tr>
+                    <th>STT</th>
+                    <th>IP</th>
+                    <th>Thành phố</th>
+                    <th>Vùng</th>
+                    <th>Quốc gia</th>
+                    <th>Vĩ độ</th>
+                    <th>Kinh độ</th>
+                    <th>Thời gian</th>
+                </tr>
+            </thead>
+            <tbody>
+                </tbody>
+        </table>
+        <p style="text-align: center; margin-top: 20px;"><a href="/">Quay về trang chính</a></p>
+    </div>
+
+    <script src="script-admin.js"></script>
+</body>
+</html>
