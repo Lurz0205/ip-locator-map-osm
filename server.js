@@ -16,8 +16,6 @@ app.use(express.json());
 // Cấu hình Express để phục vụ các file tĩnh (HTML, CSS, JS) từ thư mục 'public'
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ----------- THAY ĐỔI CẤU TRÚC KHỞI ĐỘNG TỪ ĐÂY -----------
-
 // Kết nối MongoDB Atlas
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => {
@@ -37,12 +35,22 @@ mongoose.connect(process.env.MONGODB_URI)
         process.exit(1);
     });
 
-// ----------- CÁC ROUTES ĐỊNH NGHĨA Ở ĐÂY -----------
-// (Đảm bảo tất cả các app.get/app.post của bạn nằm Ở ĐÂY,
-// KHÔNG THAY ĐỔI chúng, chỉ đảm bảo chúng nằm giữa phần kết nối DB và phần đóng file)
+// Định nghĩa Schema và Model cho IP Log
+const ipLogSchema = new mongoose.Schema({
+    ip: { type: String, required: true },
+    city: String,
+    region: String,
+    country: String,
+    latitude: Number,
+    longitude: Number,
+    timestamp: { type: Date, default: Date.now }
+});
+const IPLog = mongoose.model('IPLog', ipLogSchema);
 
 // ---- Route chính (/) để tự động ghi IP và phục vụ trang chủ ----
 app.get('/', async (req, res) => {
+    console.log('--- Yêu cầu đã nhận trên route / ---'); // Dòng log MỚI cần thêm vào đây
+
     let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
     if (clientIp === '::1' || clientIp === '127.0.0.1') {
@@ -54,12 +62,12 @@ app.get('/', async (req, res) => {
 
     const ipinfoToken = process.env.IPINFO_API_TOKEN;
 
-    // Kiểm tra xem IP này đã được ghi trong 24 giờ gần nhất chưa để tránh ghi trùng lặp quá nhiều
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // // TẠM THỜI VÔ HIỆU HÓA KIỂM TRA 24 GIỜ ĐỂ KIỂM TRA
+    // const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     try { // Thêm try-catch để bắt lỗi từ IPLog.findOne
-        const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourHoursAgo } });
+        // const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourFourHoursAgo } });
 
-        if (!existingLog) { // Chỉ ghi log nếu chưa có trong 24h qua
+        // if (!existingLog) { // Tạm thời bỏ qua điều kiện này để ghi log mọi lúc
             if (!ipinfoToken) {
                 console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
                 const ipLog = new IPLog({ ip: clientIp });
@@ -98,15 +106,13 @@ app.get('/', async (req, res) => {
                     }
                 }
             }
-        } else {
-            console.log(`IP ${clientIp} đã được ghi trong 24 giờ qua. Bỏ qua ghi log.`);
-        }
+        // } else {
+        //     console.log(`IP ${clientIp} đã được ghi trong 24 giờ qua. Bỏ qua ghi log.`);
+        // }
     } catch (dbError) {
         console.error('Lỗi khi kiểm tra hoặc lưu IP vào database:', dbError);
     }
 
-
-    // Sau khi xử lý ghi log, phục vụ trang chính
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
