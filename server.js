@@ -68,27 +68,31 @@ app.post('/api/log-my-ip', async (req, res) => {
 
     const ipinfoToken = process.env.IPINFO_API_TOKEN;
 
-    // Lấy dữ liệu vị trí chính xác từ body request nếu có (gửi từ frontend)
-    const { latitude, longitude, city, region, country, isPrecise } = req.body;
+    // Lấy dữ liệu vị trí và cờ isPrecise từ body request
+    const { latitude, longitude, city, region, country, isPrecise, ip: ipFromFrontend } = req.body;
 
     // Kiểm tra xem IP này đã được ghi trong 24 giờ gần nhất chưa để tránh ghi trùng lặp quá nhiều
+    // Sử dụng IP thật của client để kiểm tra trùng lặp, không phải "N/A"
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     try {
         const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourHoursAgo } });
 
         if (!existingLog) { // Chỉ ghi log nếu chưa có trong 24h qua
-            let newLogData = { ip: clientIp };
+            let newLogData = {};
 
-            if (isPrecise && typeof latitude === 'number' && typeof longitude === 'number' && !isNaN(latitude) && !isNaN(longitude)) {
-                // Nếu frontend gửi vị trí chính xác, lưu vị trí đó
+            if (isPrecise && ipFromFrontend === "N/A" && typeof latitude === 'number' && typeof longitude === 'number' && !isNaN(latitude) && !isNaN(longitude)) {
+                // Nếu frontend gửi vị trí chính xác và IP là "N/A", lưu nó như vậy
+                newLogData.ip = "N/A (Chính xác từ trình duyệt)"; // Ghi rõ hơn trong DB
                 newLogData.latitude = latitude;
                 newLogData.longitude = longitude;
                 newLogData.city = city || 'Chưa xác định (chính xác)';
                 newLogData.region = region || 'Chưa xác định (chính xác)';
                 newLogData.country = country || 'Chưa xác định (chính xác)';
-                console.log(`IP ${clientIp} đã được ghi lại với vị trí chính xác từ trình duyệt.`);
+                console.log(`Vị trí chính xác từ trình duyệt đã được ghi lại.`);
             } else {
-                // Nếu không có vị trí chính xác từ frontend, hoặc isPrecise là false, dùng IPinfo
+                // Nếu không phải vị trí chính xác, hoặc frontend không gửi IP "N/A",
+                // thì dùng IP thực của client và định vị bằng IPinfo
+                newLogData.ip = clientIp; // Sử dụng IP thật
                 if (!ipinfoToken) {
                     console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
                 } else {
@@ -104,7 +108,6 @@ app.post('/api/log-my-ip', async (req, res) => {
                         console.log(`IP ${clientIp} đã được ghi lại với vị trí từ IPinfo.`);
                     } catch (error) {
                         console.error('Lỗi khi thu thập và ghi IP (từ /api/log-my-ip với IPinfo):', error.message);
-                        // Trong trường hợp lỗi IPinfo, vẫn cố gắng lưu IP cơ bản
                         console.log(`IP ${clientIp} đã được ghi lại (có thể không đầy đủ do lỗi API).`);
                     }
                 }
