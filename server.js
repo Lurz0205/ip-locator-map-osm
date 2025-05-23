@@ -10,6 +10,13 @@ const basicAuth = require('express-basic-auth'); // Thư viện xác thực cơ 
 const app = express();
 const port = process.env.PORT || 3000;
 
+// === DÒNG LOG MỚI CẦN THÊM VÀO ĐÂY ===
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] Request received: ${req.method} ${req.url}`);
+    next(); // Chuyển quyền điều khiển cho middleware/route handler tiếp theo
+});
+// ======================================
+
 // Middleware để phân tích JSON trong body của request
 app.use(express.json());
 
@@ -49,7 +56,7 @@ const IPLog = mongoose.model('IPLog', ipLogSchema);
 
 // ---- Route chính (/) để tự động ghi IP và phục vụ trang chủ ----
 app.get('/', async (req, res) => {
-    console.log('--- Yêu cầu đã nhận trên route / ---'); // Dòng log MỚI cần thêm vào đây
+    console.log('--- Yêu cầu đã nhận trên route / ---'); // Dòng log CŨ hơn
 
     let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
