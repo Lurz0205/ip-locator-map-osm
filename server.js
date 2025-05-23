@@ -186,13 +186,11 @@ app.use('/admin', basicAuth({
     unauthorizedResponse: 'Truy cập không được phép. Vui lòng kiểm tra tên người dùng và mật khẩu của bạn.'
 }));
 
-// === THÊM ROUTE NÀY ĐỂ PHỤC VỤ admin.html ===
-// Route này sẽ được kích hoạt sau khi basicAuth đã xác thực thành công
-app.get('/admin', (req, res) => {
+// Endpoint để phục vụ trang HTML quản lý
+app.get('/admin', (req, res) => { // Thay đổi từ /admin/ip-logs thành /admin
     console.log('--- Yêu cầu đã nhận trên route /admin, phục vụ admin.html ---');
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
-// ===========================================
 
 // Endpoint API để lấy dữ liệu IP Logs (được bảo vệ bởi basicAuth)
 app.get('/api/admin/ip-data', async (req, res) => {
@@ -204,6 +202,19 @@ app.get('/api/admin/ip-data', async (req, res) => {
         res.status(500).json({ error: 'Không thể tải dữ liệu IP từ cơ sở dữ liệu.' });
     }
 });
+
+// === MỚI: Endpoint để xóa tất cả IP Logs (được bảo vệ bởi basicAuth) ===
+app.delete('/api/admin/ip-data', async (req, res) => {
+    try {
+        const result = await IPLog.deleteMany({}); // Xóa tất cả các bản ghi
+        console.log(`Đã xóa ${result.deletedCount} IP logs.`);
+        res.json({ message: `Đã xóa thành công ${result.deletedCount} IP logs.` });
+    } catch (error) {
+        console.error('Lỗi khi xóa IP logs:', error);
+        res.status(500).json({ error: 'Không thể xóa IP logs từ cơ sở dữ liệu.' });
+    }
+});
+// ==================================================================
 
 // === ROUTE CATCH-ALL CUỐI CÙNG ===
 // Điều này sẽ xử lý các yêu cầu không khớp với bất kỳ file tĩnh nào
