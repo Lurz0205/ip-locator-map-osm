@@ -5,7 +5,7 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const mongoose = require('mongoose');
-const basicAuth = require('express-basic-auth'); // Đã sửa cú pháp require
+const basicAuth = require('express-basic-auth'); // Middleware xác thực cơ bản
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -17,25 +17,14 @@ app.use((req, res, next) => {
 });
 // ======================================
 
-// Middleware để phân tích JSON trong body của request
+// Middleware để phân tích JSON trong body của request (cần cho API Gemini)
 app.use(express.json());
 
-// === THÊM ROUTE CỤ THỂ ĐỂ PHỤC VỤ script-admin-v2.js VỚI ƯU TIÊN CAO NHẤT ===
-// Điều này sẽ đảm bảo rằng khi trình duyệt yêu cầu script-admin-v2.js,
-// Express sẽ phục vụ đúng file này và đặt Content-Type chính xác.
-app.get('/script-admin-v2.js', (req, res) => {
-    console.log('--- Yêu cầu đã nhận và phục vụ script-admin-v2.js ---');
-    res.type('application/javascript'); // Đặt Content-Type rõ ràng
-    res.sendFile(path.join(__dirname, 'public', 'script-admin-v2.js'));
-});
-// ====================================================================
-
-// === ĐẶT express.static Ở ĐÂY (SAU ROUTE CỤ THỂ CHO script-admin-v2.js) ===
-// Điều này đảm bảo rằng tất cả các file tĩnh khác (HTML, CSS, JS còn lại, images)
-// từ thư mục 'public' sẽ được phục vụ.
+// === CẤU HÌNH PHỤC VỤ FILE TĨNH (HTML, CSS, JS) ===
+// Express sẽ tự động tìm các file tĩnh trong thư mục 'public'.
+// Đặt nó ở đây để ưu tiên xử lý các yêu cầu cho tài nguyên tĩnh.
 app.use(express.static(path.join(__dirname, 'public')));
-// ======================================================================
-
+// ===============================================
 
 // Kết nối MongoDB Atlas
 mongoose.connect(process.env.MONGODB_URI)
@@ -46,12 +35,12 @@ mongoose.connect(process.env.MONGODB_URI)
         app.listen(port, () => {
             console.log(`Máy chủ đang chạy trên cổng ${port}`);
             console.log(`Mở trình duyệt tại http://localhost:${port}`);
-            console.log(`Trang quản lý IP: http://localhost:${port}/admin/ip-logs (Yêu cầu đăng nhập)`);
+            console.log(`Trang quản lý IP: http://localhost:${port}/admin (Yêu cầu đăng nhập)`);
         });
     })
     .catch(err => {
         console.error('MongoDB connection error. App will not start:', err);
-        process.exit(1);
+        process.exit(1); // Thoát ứng dụng nếu không kết nối được DB
     });
 
 // Định nghĩa Schema và Model cho IP Log
@@ -66,27 +55,17 @@ const ipLogSchema = new mongoose.Schema({
 });
 const IPLog = mongoose.model('IPLog', ipLogSchema);
 
-// ---- ROUTE KIỂM TRA ----
-// app.get('/test-route', ...); // Nếu bạn muốn giữ route này, hãy đặt nó ở đây
-
-
-// ---- Route chính (/) để tự động ghi IP và phục vụ trang chủ ----
-// (Vẫn tạm thời comment out để express.static tự xử lý index.html)
-// app.get('/', async (req, res) => {
-//     console.log('--- Yêu cầu đã nhận trên route / ---');
-//     // ... logic ghi IP ...
-//     res.sendFile(path.join(__dirname, 'public', 'index.html'));
-// });
-
-
-// ---- Endpoint API để frontend lấy thông tin vị trí IP (không ghi log lại) ----
+// ---- Endpoint API để frontend lấy thông tin vị trí IP ----
+// Tự động ghi log IP mới nếu nó chưa tồn tại trong vòng 24 giờ.
 app.get('/api/get-ip-location', async (req, res) => {
     let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
+    // Đối phó với IP cục bộ trong quá trình phát triển
     if (clientIp === '::1' || clientIp === '127.0.0.1') {
-        clientIp = '8.8.8.8';
+        clientIp = '8.8.8.8'; // Sử dụng IP Google DNS để thử nghiệm
         console.warn('Địa chỉ IP cục bộ được phát hiện. Sử dụng IP test để ghi log:', clientIp);
     } else {
+        // Xử lý trường hợp có nhiều IP (ví dụ: qua proxy)
         clientIp = clientIp.split(',')[0].trim();
     }
 
@@ -98,7 +77,7 @@ app.get('/api/get-ip-location', async (req, res) => {
             error: 'Dịch vụ định vị IP chưa được cấu hình. Vui lòng đặt IPINFO_API_TOKEN.',
             ip: clientIp,
             latitude: 0,
-            longitude: 0
+            longitude: 0 // Trả về tọa độ 0,0 để không làm lỗi frontend
         });
     }
 
@@ -110,6 +89,26 @@ app.get('/api/get-ip-location', async (req, res) => {
 
         if (data && data.loc) {
             const [latitude, longitude] = data.loc.split(',').map(Number);
+
+            // Ghi IP vào MongoDB
+            const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourHoursAgo } });
+
+            if (!existingLog) {
+                const newLog = new IPLog({
+                    ip: data.ip,
+                    city: data.city,
+                    region: data.region,
+                    country: data.country,
+                    latitude: latitude,
+                    longitude: longitude
+                });
+                await newLog.save();
+                console.log(`IP ${data.ip} đã được ghi vào DB.`);
+            } else {
+                console.log(`IP ${data.ip} đã được ghi trong 24 giờ qua. Không ghi lại.`);
+            }
+
             res.json({
                 latitude: latitude,
                 longitude: longitude,
@@ -119,6 +118,7 @@ app.get('/api/get-ip-location', async (req, res) => {
                 ip: data.ip
             });
         } else {
+            // Không tìm thấy thông tin vị trí hợp lệ từ ipinfo.io
             res.status(500).json({ error: 'Không thể định vị IP hoặc thiếu thông tin.', ip: clientIp });
         }
     } catch (error) {
@@ -126,10 +126,11 @@ app.get('/api/get-ip-location', async (req, res) => {
         if (error.response) {
             console.error('Dữ liệu lỗi từ phản hồi API:', error.response.data);
         }
-        res.status(500).json({ error: 'Lỗi máy chủ trong quá trình định vị IP. Vui lòng kiểm tra IPinfo token của bạn.', ip: clientIp });
+        res.status(500).json({ error: 'Lỗi máy chủ trong quá trình định vị IP. Vui lòng kiểm tra IPinfo token của bạn hoặc API.', ip: clientIp });
     }
 });
 
+// ---- Endpoint API để frontend yêu cầu mô tả địa điểm từ Gemini ----
 app.post('/api/describe-location', async (req, res) => {
     const { city, country } = req.body;
 
@@ -167,7 +168,7 @@ app.post('/api/describe-location', async (req, res) => {
             res.json({ description: text });
         } else {
             console.error("Cấu trúc phản hồi Gemini không mong muốn:", result);
-            res.status(500).json({ error: 'Không thể tạo mô tả địa điểm. Vui lòng thử lại.' });
+            res.status(500).json({ error: 'Không thể tạo mô tả địa điểm. Phản hồi Gemini không hợp lệ.' });
         }
     } catch (error) {
         console.error('Lỗi khi gọi Gemini API:', error);
@@ -176,23 +177,19 @@ app.post('/api/describe-location', async (req, res) => {
 });
 
 // ---- Trang quản lý IP Logs (có xác thực) ----
+// Middleware basicAuth chỉ áp dụng cho route /admin và các sub-route của nó
 app.use('/admin', basicAuth({
     users: {
         [process.env.ADMIN_USERNAME]: process.env.ADMIN_PASSWORD
     },
-    challenge: true,
+    challenge: true, // Hiển thị popup đăng nhập
     unauthorizedResponse: 'Truy cập không được phép. Vui lòng kiểm tra tên người dùng và mật khẩu của bạn.'
 }));
-
-// Endpoint để phục vụ trang HTML quản lý
-app.get('/admin/ip-logs', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'admin-logs.html'));
-});
 
 // Endpoint API để lấy dữ liệu IP Logs (được bảo vệ bởi basicAuth)
 app.get('/api/admin/ip-data', async (req, res) => {
     try {
-        const logs = await IPLog.find().sort({ timestamp: -1 });
+        const logs = await IPLog.find().sort({ timestamp: -1 }); // Lấy tất cả logs, sắp xếp mới nhất lên trước
         res.json(logs);
     } catch (error) {
         console.error('Lỗi khi lấy IP logs từ DB:', error);
@@ -200,9 +197,11 @@ app.get('/api/admin/ip-data', async (req, res) => {
     }
 });
 
-// === ĐẶT ROUTE CATCH-ALL CUỐI CÙNG ===
-// Điều này sẽ xử lý các yêu cầu không khớp với bất kỳ route nào ở trên
-// VÀ KHÔNG PHẢI LÀ MỘT FILE TĨNH được phục vụ bởi express.static.
+// === ROUTE CATCH-ALL CUỐI CÙNG ===
+// Điều này sẽ xử lý các yêu cầu không khớp với bất kỳ file tĩnh nào
+// hoặc route API/admin nào ở trên. Thường dùng cho các ứng dụng SPA
+// để trả về trang chính nếu đường dẫn không tìm thấy.
 app.get('*', (req, res) => {
+    console.log(`[${new Date().toISOString()}] Catch-all route activated for: ${req.url}`);
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
