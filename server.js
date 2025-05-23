@@ -97,7 +97,7 @@ app.post('/api/describe-location', async (req, res) => {
     let chatHistory = [];
     chatHistory.push({ role: "user", parts: [{ text: prompt }] });
     const payload = { contents: chatHistory };
-    const apiKey = ""; // API Key sẽ được Canvas/Render tự động cung cấp
+    const apiKey = process.env.GOOGLE_API_KEY; // Đọc API Key từ biến môi trường
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     try {
