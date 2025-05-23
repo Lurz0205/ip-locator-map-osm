@@ -20,13 +20,21 @@ app.use((req, res, next) => {
 // Middleware để phân tích JSON trong body của request
 app.use(express.json());
 
-// === ĐẶT express.static Ở ĐÂY (TRƯỚC HẦU HẾT CÁC ROUTES KHÁC) ===
-// Điều này đảm bảo rằng tất cả các file tĩnh (HTML, CSS, JS, images)
-// từ thư mục 'public' sẽ được phục vụ trước tiên.
-// Nếu một yêu cầu phù hợp với một file tĩnh, nó sẽ được xử lý ở đây
-// và KHÔNG đi đến các routes Express bên dưới.
+// === THÊM ROUTE CỤ THỂ ĐỂ PHỤC VỤ script-admin-v2.js VỚI ƯU TIÊN CAO NHẤT ===
+// Điều này sẽ đảm bảo rằng khi trình duyệt yêu cầu script-admin-v2.js,
+// Express sẽ phục vụ đúng file này và đặt Content-Type chính xác.
+app.get('/script-admin-v2.js', (req, res) => {
+    console.log('--- Yêu cầu đã nhận và phục vụ script-admin-v2.js ---');
+    res.type('application/javascript'); // Đặt Content-Type rõ ràng
+    res.sendFile(path.join(__dirname, 'public', 'script-admin-v2.js'));
+});
+// ====================================================================
+
+// === ĐẶT express.static Ở ĐÂY (SAU ROUTE CỤ THỂ CHO script-admin-v2.js) ===
+// Điều này đảm bảo rằng tất cả các file tĩnh khác (HTML, CSS, JS còn lại, images)
+// từ thư mục 'public' sẽ được phục vụ.
 app.use(express.static(path.join(__dirname, 'public')));
-// =============================================================
+// ======================================================================
 
 
 // Kết nối MongoDB Atlas
@@ -63,8 +71,7 @@ const IPLog = mongoose.model('IPLog', ipLogSchema);
 
 
 // ---- Route chính (/) để tự động ghi IP và phục vụ trang chủ ----
-// CHỈ CẦN ĐẶT NẾU index.html KHÔNG PHẢI LÀ FILE TĨNH ĐƯỢC PHỤC VỤ MẶC ĐỊNH BỞI express.static
-// (nhưng chúng ta sẽ để cho express.static tự xử lý index.html)
+// (Vẫn tạm thời comment out để express.static tự xử lý index.html)
 // app.get('/', async (req, res) => {
 //     console.log('--- Yêu cầu đã nhận trên route / ---');
 //     // ... logic ghi IP ...
@@ -197,7 +204,5 @@ app.get('/api/admin/ip-data', async (req, res) => {
 // Điều này sẽ xử lý các yêu cầu không khớp với bất kỳ route nào ở trên
 // VÀ KHÔNG PHẢI LÀ MỘT FILE TĨNH được phục vụ bởi express.static.
 app.get('*', (req, res) => {
-    // Nếu yêu cầu không phải là file tĩnh, cũng không phải route API hay /admin/ip-logs,
-    // thì trả về index.html như một fallback SPA.
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
