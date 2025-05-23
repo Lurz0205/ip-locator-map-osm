@@ -55,7 +55,7 @@ const ipLogSchema = new mongoose.Schema({
 });
 const IPLog = mongoose.model('IPLog', ipLogSchema);
 
-// === MỚI: Endpoint để ghi IP vào logs (được gọi bởi frontend khi trang chính tải) ===
+// === Endpoint để ghi IP vào logs (được gọi bởi frontend khi trang chính tải) ===
 app.post('/api/log-my-ip', async (req, res) => {
     let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
@@ -68,50 +68,51 @@ app.post('/api/log-my-ip', async (req, res) => {
 
     const ipinfoToken = process.env.IPINFO_API_TOKEN;
 
+    // Lấy dữ liệu vị trí chính xác từ body request nếu có (gửi từ frontend)
+    const { latitude, longitude, city, region, country, isPrecise } = req.body;
+
     // Kiểm tra xem IP này đã được ghi trong 24 giờ gần nhất chưa để tránh ghi trùng lặp quá nhiều
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     try {
         const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourHoursAgo } });
 
         if (!existingLog) { // Chỉ ghi log nếu chưa có trong 24h qua
-            if (!ipinfoToken) {
-                console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
-                const ipLog = new IPLog({ ip: clientIp });
-                await ipLog.save();
-                console.log(`IP ${clientIp} đã được ghi lại (chỉ IP).`);
-            } else {
-                const ipinfoUrl = `https://ipinfo.io/${clientIp}/json?token=${ipinfoToken}`;
-                try {
-                    const response = await axios.get(ipinfoUrl);
-                    const data = response.data;
-                    let city = data.city || null;
-                    let region = data.region || null;
-                    let country = data.country || null;
-                    let latitude = data.loc ? parseFloat(data.loc.split(',')[0]) : null;
-                    let longitude = data.loc ? parseFloat(data.loc.split(',')[1]) : null;
+            let newLogData = { ip: clientIp };
 
-                    const ipLog = new IPLog({
-                        ip: clientIp,
-                        city,
-                        region,
-                        country,
-                        latitude,
-                        longitude
-                    });
-                    await ipLog.save();
-                    console.log(`IP ${clientIp} đã được ghi lại.`);
-                } catch (error) {
-                    console.error('Lỗi khi thu thập và ghi IP (từ /api/log-my-ip):', error.message);
-                    // Trong trường hợp lỗi, vẫn cố gắng lưu IP cơ bản
+            if (isPrecise && typeof latitude === 'number' && typeof longitude === 'number' && !isNaN(latitude) && !isNaN(longitude)) {
+                // Nếu frontend gửi vị trí chính xác, lưu vị trí đó
+                newLogData.latitude = latitude;
+                newLogData.longitude = longitude;
+                newLogData.city = city || 'Chưa xác định (chính xác)';
+                newLogData.region = region || 'Chưa xác định (chính xác)';
+                newLogData.country = country || 'Chưa xác định (chính xác)';
+                console.log(`IP ${clientIp} đã được ghi lại với vị trí chính xác từ trình duyệt.`);
+            } else {
+                // Nếu không có vị trí chính xác từ frontend, hoặc isPrecise là false, dùng IPinfo
+                if (!ipinfoToken) {
+                    console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
+                } else {
+                    const ipinfoUrl = `https://ipinfo.io/${clientIp}/json?token=${ipinfoToken}`;
                     try {
-                        const ipLog = new IPLog({ ip: clientIp });
-                        await ipLog.save();
+                        const response = await axios.get(ipinfoUrl);
+                        const data = response.data;
+                        newLogData.city = data.city || null;
+                        newLogData.region = data.region || null;
+                        newLogData.country = data.country || null;
+                        newLogData.latitude = data.loc ? parseFloat(data.loc.split(',')[0]) : null;
+                        newLogData.longitude = data.loc ? parseFloat(data.loc.split(',')[1]) : null;
+                        console.log(`IP ${clientIp} đã được ghi lại với vị trí từ IPinfo.`);
+                    } catch (error) {
+                        console.error('Lỗi khi thu thập và ghi IP (từ /api/log-my-ip với IPinfo):', error.message);
+                        // Trong trường hợp lỗi IPinfo, vẫn cố gắng lưu IP cơ bản
                         console.log(`IP ${clientIp} đã được ghi lại (có thể không đầy đủ do lỗi API).`);
-                    } catch (saveError) {
-                        console.error('Lỗi khi cố gắng lưu IP sau khi lỗi API (từ /api/log-my-ip):', saveError);
                     }
                 }
             }
+
+            const ipLog = new IPLog(newLogData);
+            await ipLog.save();
+
         } else {
             console.log(`IP ${clientIp} đã được ghi trong 24 giờ qua. Bỏ qua ghi log.`);
         }
@@ -231,7 +232,7 @@ app.use('/admin', basicAuth({
 }));
 
 // Endpoint để phục vụ trang HTML quản lý
-app.get('/admin', (req, res) => {
+app.get('/admin', (req, res) => { // Đã sửa từ /admin/ip-logs thành /admin
     console.log('--- Yêu cầu đã nhận trên route /admin, phục vụ admin.html ---');
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
