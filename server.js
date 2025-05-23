@@ -10,12 +10,12 @@ const basicAuth = require = require('express-basic-auth'); // Thư viện xác t
 const app = express();
 const port = process.env.PORT || 3000;
 
-// === DÒNG LOG GLOBAL ===
+// === DÒNG LOG GLOBAL (Chạy cho MỌI yêu cầu) ===
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] Request received: ${req.method} ${req.url}`);
     next(); // Chuyển quyền điều khiển cho middleware/route handler tiếp theo
 });
-// ======================
+// ======================================
 
 // Middleware để phân tích JSON trong body của request
 app.use(express.json());
@@ -50,10 +50,17 @@ const ipLogSchema = new mongoose.Schema({
 });
 const IPLog = mongoose.model('IPLog', ipLogSchema);
 
+// ---- ROUTE KIỂM TRA MỚI ----
+// Truy cập https://your-app-name.onrender.com/test-route để kiểm tra
+app.get('/test-route', (req, res) => {
+    console.log('--- Yêu cầu đã nhận trên route /test-route ---');
+    res.send('Đây là trang kiểm tra! Nếu bạn thấy dòng này, route đang hoạt động.');
+});
+// --------------------------
+
 // ---- Route chính (/) để tự động ghi IP và phục vụ trang chủ ----
-// ĐẶT ROUTE NÀY TRƯỚC app.use(express.static) ĐỂ NÓ ĐƯỢC XỬ LÝ TRƯỚC
 app.get('/', async (req, res) => {
-    console.log('--- Yêu cầu đã nhận trên route / ---'); // Dòng log này bây giờ sẽ xuất hiện
+    console.log('--- Yêu cầu đã nhận trên route / ---');
 
     let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
@@ -66,56 +73,49 @@ app.get('/', async (req, res) => {
 
     const ipinfoToken = process.env.IPINFO_API_TOKEN;
 
-    // // TẠM THỜI VÔ HIỆU HÓA KIỂM TRA 24 GIỜ ĐỂ KIỂM TRA (như đã có)
-    // const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     try {
-        // const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourFourHoursAgo } });
-        // if (!existingLog) {
-            if (!ipinfoToken) {
-                console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
-                const ipLog = new IPLog({ ip: clientIp });
-                await ipLog.save();
-                console.log(`IP ${clientIp} đã được ghi lại (chỉ IP).`);
-            } else {
-                const ipinfoUrl = `https://ipinfo.io/${clientIp}/json?token=${ipinfoToken}`;
-                try {
-                    const response = await axios.get(ipinfoUrl);
-                    const data = response.data;
-                    let city = data.city || null;
-                    let region = data.region || null;
-                    let country = data.country || null;
-                    let latitude = data.loc ? parseFloat(data.loc.split(',')[0]) : null;
-                    let longitude = data.loc ? parseFloat(data.loc.split(',')[1]) : null;
+        if (!ipinfoToken) {
+            console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
+            const ipLog = new IPLog({ ip: clientIp });
+            await ipLog.save();
+            console.log(`IP ${clientIp} đã được ghi lại (chỉ IP).`);
+        } else {
+            const ipinfoUrl = `https://ipinfo.io/${clientIp}/json?token=${ipinfoToken}`;
+            try {
+                const response = await axios.get(ipinfoUrl);
+                const data = response.data;
+                let city = data.city || null;
+                let region = data.region || null;
+                let country = data.country || null;
+                let latitude = data.loc ? parseFloat(data.loc.split(',')[0]) : null;
+                let longitude = data.loc ? parseFloat(data.loc.split(',')[1]) : null;
 
-                    const ipLog = new IPLog({
-                        ip: clientIp,
-                        city,
-                        region,
-                        country,
-                        latitude,
-                        longitude
-                    });
+                const ipLog = new IPLog({
+                    ip: clientIp,
+                    city,
+                    region,
+                    country,
+                    latitude,
+                    longitude
+                });
+                await ipLog.save();
+                console.log(`IP ${clientIp} đã được ghi lại.`);
+            } catch (error) {
+                console.error('Lỗi khi thu thập và ghi IP (trang chính):', error.message);
+                try {
+                    const ipLog = new IPLog({ ip: clientIp });
                     await ipLog.save();
-                    console.log(`IP ${clientIp} đã được ghi lại.`);
-                } catch (error) {
-                    console.error('Lỗi khi thu thập và ghi IP (trang chính):', error.message);
-                    try {
-                        const ipLog = new IPLog({ ip: clientIp });
-                        await ipLog.save();
-                        console.log(`IP ${clientIp} đã được ghi lại (có thể không đầy đủ do lỗi API).`);
-                    } catch (saveError) {
-                        console.error('Lỗi khi cố gắng lưu IP sau khi lỗi API (trang chính):', saveError);
-                    }
+                    console.log(`IP ${clientIp} đã được ghi lại (có thể không đầy đủ do lỗi API).`);
+                } catch (saveError) {
+                    console.error('Lỗi khi cố gắng lưu IP sau khi lỗi API (trang chính):', saveError);
                 }
             }
-        // } else {
-        //     console.log(`IP ${clientIp} đã được ghi trong 24 giờ qua. Bỏ qua ghi log.`);
-        // }
+        }
     } catch (dbError) {
         console.error('Lỗi khi kiểm tra hoặc lưu IP vào database:', dbError);
     }
 
-    res.sendFile(path.join(__dirname, 'public', 'index.html')); // Phục vụ index.html SAU KHI ghi log
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 
@@ -238,14 +238,15 @@ app.get('/api/admin/ip-data', async (req, res) => {
     }
 });
 
-// === DI CHUYỂN DÒNG NÀY XUỐNG ĐÂY ===
-// Cấu hình Express để phục vụ các file tĩnh (CSS, JS, images, etc.) từ thư mục 'public'
-// ĐẶT SAU CÁC ROUTES CỤ THỂ (như app.get('/') ở trên) ĐỂ CÁC ROUTES ĐÓ ĐƯỢC ƯU TIÊN
+// === THAY ĐỔI CÁCH PHỤC VỤ FILE TĨNH Ở ĐÂY ===
+// Phục vụ các file tĩnh (JS, CSS, images) trực tiếp từ thư mục 'public'.
+// Đặt middleware này ở đây để các route cụ thể (như '/', '/test-route', '/admin') được ưu tiên.
+// Cụ thể là nó sẽ phục vụ các file như /style.css, /script.js, /script-admin-v2.js
 app.use(express.static(path.join(__dirname, 'public')));
-// ===================================
+// ===========================================
 
-// Xử lý tất cả các yêu cầu GET khác mà không phải là '/' hoặc '/admin'
-// Điều này quan trọng để các file tĩnh khác trong public/ vẫn hoạt động
+// Xử lý tất cả các yêu cầu GET khác mà không phải là một route được định nghĩa hoặc một file tĩnh.
+// Điều này sẽ trả về index.html cho các đường dẫn không tồn tại.
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
