@@ -35,9 +35,9 @@ h1 {
 /* Khu vực bản đồ */
 #map {
     height: 500px; /* Chiều cao cố định cho bản đồ */
-    width: 100%; /* Chiều rộng đầy đủ */
-    border: 1px solid #e0e0e0; /* Viền nhẹ */
-    border-radius: 8px; /* Bo tròn góc */
+    width: 100%;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
     margin-bottom: 25px;
     background-color: #e9e9e9; /* Màu nền khi bản đồ đang tải */
     display: flex;
@@ -56,6 +56,7 @@ h1 {
     text-align: left; /* Căn trái chữ */
     font-size: 1.1em;
     line-height: 1.6; /* Khoảng cách dòng */
+    margin-bottom: 25px; /* Thêm khoảng cách dưới cùng */
 }
 
 #location-info p {
@@ -96,4 +97,84 @@ h1 {
 
 .info-window-content strong {
     color: #333;
+}
+
+/* Kiểu cho khu vực tính năng Gemini */
+.gemini-feature {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
+}
+
+/* Kiểu cho nút hành động */
+.action-button {
+    background-color: #28a745; /* Màu xanh lá cây */
+    color: white;
+    padding: 12px 25px;
+    border: none;
+    border-radius: 5px;
+    font-size: 1.1em;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+}
+
+.action-button:hover {
+    background-color: #218838; /* Màu xanh đậm hơn khi hover */
+    transform: translateY(-2px); /* Hiệu ứng nhấc nhẹ */
+}
+
+.action-button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+/* Kiểu cho hộp mô tả */
+.description-box {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    padding: 15px;
+    border-radius: 8px;
+    text-align: left;
+    min-height: 80px; /* Chiều cao tối thiểu */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    font-style: italic;
+}
+
+.description-box p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* Admin Table Specific Styles */
+#ip-logs-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+#ip-logs-table th, #ip-logs-table td {
+    border: 1px solid #e0e0e0;
+    padding: 10px;
+    text-align: left;
+}
+
+#ip-logs-table th {
+    background-color: #f0f0f0;
+    font-weight: bold;
+    color: #555;
+}
+
+#ip-logs-table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+#ip-logs-table tbody tr:hover {
+    background-color: #e9f5ff;
 }
