@@ -183,19 +183,68 @@ async function generateLocationDescription() {
 
 // === MỚI: Hàm để gọi API ghi IP khi trang tải ===
 async function logUserIp() {
+    // Lấy thông tin vị trí hiện đang hiển thị trên UI sau khi initMap đã chạy
+    const displayIpElement = document.getElementById('display-ip');
+    const displayCityElement = document.getElementById('display-city');
+    const displayRegionElement = document.getElementById('display-region');
+    const displayCountryElement = document.getElementById('display-country');
+
+    // Đảm bảo các phần tử đã có nội dung trước khi lấy
+    if (displayIpElement.innerText === 'Đang tải...') {
+        // Chờ thêm một chút nếu initMap chưa hoàn tất việc cập nhật UI
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    const currentIpDisplay = displayIpElement.innerText;
+    const currentCity = displayCityElement.innerText;
+    const currentRegion = displayRegionElement.innerText;
+    const currentCountry = displayCountryElement.innerText;
+
+    let payload = {};
+
+    // Kiểm tra xem vị trí hiển thị có phải là "Vị trí chính xác (không phải IP)" không
+    // và tọa độ trên bản đồ có hợp lệ không.
+    if (currentIpDisplay === "Vị trí chính xác (không phải IP)" && map && marker) {
+        const markerLatLng = marker.getLatLng();
+        const currentLat = markerLatLng.lat;
+        const currentLon = markerLatLng.lng;
+
+        if (!isNaN(currentLat) && !isNaN(currentLon) &&
+            currentCity !== 'Đang tải...' && currentCity !== 'N/A' && currentCity !== 'Không xác định') {
+            payload = {
+                latitude: currentLat,
+                longitude: currentLon,
+                city: currentCity,
+                region: currentRegion,
+                country: currentCountry,
+                isPrecise: true // Cờ để backend biết đây là vị trí chính xác từ trình duyệt
+            };
+            console.log('Đang gửi vị trí chính xác từ trình duyệt để ghi log:', payload);
+        } else {
+            // Trường hợp có Geolocation nhưng Nominatim không trả về đủ thông tin
+            // Backend sẽ tự tìm IP của user
+            console.log('Vị trí chính xác nhưng thiếu thông tin địa điểm. Backend sẽ tự ghi IP.');
+            payload = { isPrecise: false };
+        }
+    } else {
+        // Nếu không có vị trí chính xác từ trình duyệt (hoặc từ URL), backend sẽ tự tìm IP của user
+        console.log('Không có vị trí chính xác từ trình duyệt. Backend sẽ tự ghi IP.');
+        payload = { isPrecise: false };
+    }
+
     try {
         const response = await fetch('/api/log-my-ip', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({}) // Body rỗng, IP được lấy từ server
+            body: JSON.stringify(payload)
         });
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Lỗi khi ghi IP:', errorText);
         } else {
-            console.log('IP đã được gửi để ghi log.');
+            console.log('Yêu cầu ghi IP đã được gửi thành công.');
         }
     } catch (error) {
         console.error('Lỗi khi gọi API ghi IP:', error);
@@ -204,9 +253,13 @@ async function logUserIp() {
 // ===============================================
 
 // Lắng nghe sự kiện DOMContentLoaded để đảm bảo HTML đã được tải đầy đủ trước khi chạy script
-document.addEventListener('DOMContentLoaded', () => {
-    initMap(); // Khởi tạo bản đồ khi DOM đã sẵn sàng
-    logUserIp(); // Ghi IP của người dùng khi trang tải
+document.addEventListener('DOMContentLoaded', async () => {
+    // Đảm bảo bản đồ được khởi tạo trước khi cố gắng ghi log vị trí chính xác
+    await initMap(); // Chờ initMap hoàn tất để có locationData
+
+    // Gọi logUserIp sau khi initMap đã hoàn tất và UI đã được cập nhật
+    // Đặt trong setTimeout để đảm bảo DOM đã render xong các giá trị mới
+    setTimeout(logUserIp, 100);
 
     const describeBtn = document.getElementById('describe-location-btn');
     if (describeBtn) {
