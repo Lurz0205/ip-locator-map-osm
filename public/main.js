@@ -1,14 +1,15 @@
-let map;
-let marker;
+let map; // Biến toàn cục để lưu trữ đối tượng bản đồ Leaflet
+let marker; // Biến toàn cục để lưu trữ đối tượng marker trên bản đồ
 
+// Hàm này được gọi khi DOM đã tải xong để khởi tạo bản đồ và lấy dữ liệu IP
 async function initMap() {
     console.log("Đang khởi tạo bản đồ và tìm vị trí...");
 
-    let latitude, longitude, ip, city, region, country, isPrecise = false;
-    const urlParams = new URLSearchParams(window.location.search);
-
     // Dữ liệu tạm thời để lưu kết quả từ các nguồn khác nhau
     let locationData = {};
+    let isPrecise = false; // Biến cờ để đánh dấu vị trí có chính xác cao không
+
+    const urlParams = new URLSearchParams(window.location.search);
 
     // 1. Ưu tiên vị trí từ URL (từ trang admin)
     if (urlParams.has('lat') && urlParams.has('lon')) {
@@ -49,6 +50,7 @@ async function initMap() {
                 locationData.country = osmData.address.country || 'N/A';
                 console.log(`Reverse Geocoding: City=${locationData.city}, Country=${locationData.country}`);
             } else {
+                // Nếu Nominatim không trả về địa chỉ, đặt giá trị rõ ràng
                 locationData.city = 'Không xác định';
                 locationData.region = 'Không xác định';
                 locationData.country = 'Không xác định';
@@ -89,7 +91,7 @@ async function initMap() {
     }
 
     // Kiểm tra xem locationData có hợp lệ không trước khi sử dụng
-    if (!locationData || typeof locationData.latitude !== 'number' || typeof locationData.longitude !== 'number') {
+    if (!locationData || typeof locationData.latitude !== 'number' || typeof locationData.longitude !== 'number' || isNaN(locationData.latitude) || isNaN(locationData.longitude)) {
         console.error("Không thể xác định vị trí hợp lệ.");
         document.getElementById('map').innerHTML = '<p class="error-message">Không thể xác định vị trí. Vui lòng thử lại.</p>';
         updateLocationInfo('N/A', 'N/A', 'N/A', 'N/A');
@@ -147,7 +149,7 @@ async function generateLocationDescription() {
 
     // Kiểm tra nếu thông tin vị trí chưa được tải hoặc là N/A
     if (city === 'Đang tải...' || country === 'Đang tải...' || city === 'N/A' || country === 'N/A' || city === 'Không xác định' || country === 'Không xác định') {
-        descriptionBox.innerHTML = '<p class="error-message">Vui lòng đợi thông tin vị trí được tải xong hoặc cung cấp thành phố/quốc gia hợp lệ.</p>';
+        descriptionBox.innerHTML = '<p class="error-message">Không thể tạo mô tả: Thông tin địa điểm không đủ hoặc không xác định.</p>';
         return;
     }
 
@@ -179,9 +181,32 @@ async function generateLocationDescription() {
     }
 }
 
+// === MỚI: Hàm để gọi API ghi IP khi trang tải ===
+async function logUserIp() {
+    try {
+        const response = await fetch('/api/log-my-ip', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({}) // Body rỗng, IP được lấy từ server
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Lỗi khi ghi IP:', errorText);
+        } else {
+            console.log('IP đã được gửi để ghi log.');
+        }
+    } catch (error) {
+        console.error('Lỗi khi gọi API ghi IP:', error);
+    }
+}
+// ===============================================
+
 // Lắng nghe sự kiện DOMContentLoaded để đảm bảo HTML đã được tải đầy đủ trước khi chạy script
 document.addEventListener('DOMContentLoaded', () => {
     initMap(); // Khởi tạo bản đồ khi DOM đã sẵn sàng
+    logUserIp(); // Ghi IP của người dùng khi trang tải
 
     const describeBtn = document.getElementById('describe-location-btn');
     if (describeBtn) {
