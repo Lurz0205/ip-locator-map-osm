@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Định vị IP của bạn trên bản đồ</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗺️</text></svg>">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha2dbe+d9/ITg9YtywQhYLJd7YkmObrXqXw5gLzXhP3sJfm86rC5M8F4/X/T2T/x22"
+     crossorigin=""/>
+</head>
+<body>
+    <div class="container">
+        <h1>Vị trí IP của bạn</h1>
+        <div id="map">
+            Đang tải bản đồ...
+        </div>
+        <div id="location-info">
+            <p><strong>IP:</strong> <span id="display-ip">Đang tải...</span></p>
+            <p><strong>Thành phố:</strong> <span id="display-city">Đang tải...</span></p>
+            <p><strong>Vùng:</strong> <span id="display-region">Đang tải...</span></p>
+            <p><strong>Quốc gia:</strong> <span id="display-country">Đang tải...</span></p>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha2dbe+d9/ITg9YtywQhYLJd7YkmObrXqXw5gLzXhP3sJfm86rC5M8F4/X/T2T/x22"
+     crossorigin=""></script>
+
+    <script src="script.js"></script>
+</body>
+</html>
