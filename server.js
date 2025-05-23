@@ -55,17 +55,82 @@ const ipLogSchema = new mongoose.Schema({
 });
 const IPLog = mongoose.model('IPLog', ipLogSchema);
 
-// ---- Endpoint API để frontend lấy thông tin vị trí IP ----
-// Tự động ghi log IP mới nếu nó chưa tồn tại trong vòng 24 giờ.
-app.get('/api/get-ip-location', async (req, res) => {
+// === MỚI: Endpoint để ghi IP vào logs (được gọi bởi frontend khi trang chính tải) ===
+app.post('/api/log-my-ip', async (req, res) => {
     let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
-    // Đối phó với IP cục bộ trong quá trình phát triển
     if (clientIp === '::1' || clientIp === '127.0.0.1') {
         clientIp = '8.8.8.8'; // Sử dụng IP Google DNS để thử nghiệm
         console.warn('Địa chỉ IP cục bộ được phát hiện. Sử dụng IP test để ghi log:', clientIp);
     } else {
-        // Xử lý trường hợp có nhiều IP (ví dụ: qua proxy)
+        clientIp = clientIp.split(',')[0].trim();
+    }
+
+    const ipinfoToken = process.env.IPINFO_API_TOKEN;
+
+    // Kiểm tra xem IP này đã được ghi trong 24 giờ gần nhất chưa để tránh ghi trùng lặp quá nhiều
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    try {
+        const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourHoursAgo } });
+
+        if (!existingLog) { // Chỉ ghi log nếu chưa có trong 24h qua
+            if (!ipinfoToken) {
+                console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
+                const ipLog = new IPLog({ ip: clientIp });
+                await ipLog.save();
+                console.log(`IP ${clientIp} đã được ghi lại (chỉ IP).`);
+            } else {
+                const ipinfoUrl = `https://ipinfo.io/${clientIp}/json?token=${ipinfoToken}`;
+                try {
+                    const response = await axios.get(ipinfoUrl);
+                    const data = response.data;
+                    let city = data.city || null;
+                    let region = data.region || null;
+                    let country = data.country || null;
+                    let latitude = data.loc ? parseFloat(data.loc.split(',')[0]) : null;
+                    let longitude = data.loc ? parseFloat(data.loc.split(',')[1]) : null;
+
+                    const ipLog = new IPLog({
+                        ip: clientIp,
+                        city,
+                        region,
+                        country,
+                        latitude,
+                        longitude
+                    });
+                    await ipLog.save();
+                    console.log(`IP ${clientIp} đã được ghi lại.`);
+                } catch (error) {
+                    console.error('Lỗi khi thu thập và ghi IP (từ /api/log-my-ip):', error.message);
+                    // Trong trường hợp lỗi, vẫn cố gắng lưu IP cơ bản
+                    try {
+                        const ipLog = new IPLog({ ip: clientIp });
+                        await ipLog.save();
+                        console.log(`IP ${clientIp} đã được ghi lại (có thể không đầy đủ do lỗi API).`);
+                    } catch (saveError) {
+                        console.error('Lỗi khi cố gắng lưu IP sau khi lỗi API (từ /api/log-my-ip):', saveError);
+                    }
+                }
+            }
+        } else {
+            console.log(`IP ${clientIp} đã được ghi trong 24 giờ qua. Bỏ qua ghi log.`);
+        }
+        res.status(200).json({ message: 'IP logged successfully.' });
+    } catch (dbError) {
+        console.error('Lỗi khi kiểm tra hoặc lưu IP vào database (từ /api/log-my-ip):', dbError);
+        res.status(500).json({ error: 'Failed to log IP.' });
+    }
+});
+// ====================================================================================
+
+// ---- Endpoint API để frontend lấy thông tin vị trí IP (KHÔNG GHI LOG NỮA) ----
+app.get('/api/get-ip-location', async (req, res) => {
+    let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    if (clientIp === '::1' || clientIp === '127.0.0.1') {
+        clientIp = '8.8.8.8'; // Sử dụng IP Google DNS để thử nghiệm
+        console.warn('Địa chỉ IP cục bộ được phát hiện. Sử dụng IP test:', clientIp);
+    } else {
         clientIp = clientIp.split(',')[0].trim();
     }
 
@@ -89,26 +154,6 @@ app.get('/api/get-ip-location', async (req, res) => {
 
         if (data && data.loc) {
             const [latitude, longitude] = data.loc.split(',').map(Number);
-
-            // Ghi IP vào MongoDB
-            const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-            const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourHoursAgo } });
-
-            if (!existingLog) {
-                const newLog = new IPLog({
-                    ip: data.ip,
-                    city: data.city,
-                    region: data.region,
-                    country: data.country,
-                    latitude: latitude,
-                    longitude: longitude
-                });
-                await newLog.save();
-                console.log(`IP ${data.ip} đã được ghi vào DB.`);
-            } else {
-                console.log(`IP ${data.ip} đã được ghi trong 24 giờ qua. Không ghi lại.`);
-            }
-
             res.json({
                 latitude: latitude,
                 longitude: longitude,
@@ -118,7 +163,6 @@ app.get('/api/get-ip-location', async (req, res) => {
                 ip: data.ip
             });
         } else {
-            // Không tìm thấy thông tin vị trí hợp lệ từ ipinfo.io
             res.status(500).json({ error: 'Không thể định vị IP hoặc thiếu thông tin.', ip: clientIp });
         }
     } catch (error) {
@@ -187,7 +231,7 @@ app.use('/admin', basicAuth({
 }));
 
 // Endpoint để phục vụ trang HTML quản lý
-app.get('/admin', (req, res) => { // Thay đổi từ /admin/ip-logs thành /admin
+app.get('/admin', (req, res) => {
     console.log('--- Yêu cầu đã nhận trên route /admin, phục vụ admin.html ---');
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
@@ -203,7 +247,7 @@ app.get('/api/admin/ip-data', async (req, res) => {
     }
 });
 
-// === MỚI: Endpoint để xóa tất cả IP Logs (được bảo vệ bởi basicAuth) ===
+// Endpoint để xóa tất cả IP Logs (được bảo vệ bởi basicAuth)
 app.delete('/api/admin/ip-data', async (req, res) => {
     try {
         const result = await IPLog.deleteMany({}); // Xóa tất cả các bản ghi
@@ -214,7 +258,6 @@ app.delete('/api/admin/ip-data', async (req, res) => {
         res.status(500).json({ error: 'Không thể xóa IP logs từ cơ sở dữ liệu.' });
     }
 });
-// ==================================================================
 
 // === ROUTE CATCH-ALL CUỐI CÙNG ===
 // Điều này sẽ xử lý các yêu cầu không khớp với bất kỳ file tĩnh nào
