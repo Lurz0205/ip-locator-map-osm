@@ -16,22 +16,30 @@ app.use(express.json());
 // Cấu hình Express để phục vụ các file tĩnh (HTML, CSS, JS) từ thư mục 'public'
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ----------- THAY ĐỔI CẤU TRÚC KHỞI ĐỘNG TỪ ĐÂY -----------
+
 // Kết nối MongoDB Atlas
 mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('Connected to MongoDB Atlas'))
-    .catch(err => console.error('MongoDB connection error:', err));
+    .then(() => {
+        console.log('Connected to MongoDB Atlas successfully.'); // Log khi kết nối thành công
 
-// Định nghĩa Schema và Model cho IP Log
-const ipLogSchema = new mongoose.Schema({
-    ip: { type: String, required: true },
-    city: String,
-    region: String,
-    country: String,
-    latitude: Number,
-    longitude: Number,
-    timestamp: { type: Date, default: Date.now }
-});
-const IPLog = mongoose.model('IPLog', ipLogSchema);
+        // Khởi động máy chủ Express CHỈ KHI kết nối MongoDB thành công
+        app.listen(port, () => {
+            console.log(`Máy chủ đang chạy trên cổng ${port}`);
+            console.log(`Mở trình duyệt tại http://localhost:${port}`);
+            console.log(`Trang quản lý IP: http://localhost:${port}/admin/ip-logs (Yêu cầu đăng nhập)`);
+        });
+    })
+    .catch(err => {
+        console.error('MongoDB connection error. App will not start:', err);
+        // Quan trọng: Thoát ứng dụng nếu không kết nối được MongoDB
+        // Điều này sẽ khiến Render báo lỗi rõ ràng hơn thay vì chỉ "No open ports detected"
+        process.exit(1);
+    });
+
+// ----------- CÁC ROUTES ĐỊNH NGHĨA Ở ĐÂY -----------
+// (Đảm bảo tất cả các app.get/app.post của bạn nằm Ở ĐÂY,
+// KHÔNG THAY ĐỔI chúng, chỉ đảm bảo chúng nằm giữa phần kết nối DB và phần đóng file)
 
 // ---- Route chính (/) để tự động ghi IP và phục vụ trang chủ ----
 app.get('/', async (req, res) => {
@@ -48,50 +56,55 @@ app.get('/', async (req, res) => {
 
     // Kiểm tra xem IP này đã được ghi trong 24 giờ gần nhất chưa để tránh ghi trùng lặp quá nhiều
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourHoursAgo } });
+    try { // Thêm try-catch để bắt lỗi từ IPLog.findOne
+        const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourHoursAgo } });
 
-    if (!existingLog) { // Chỉ ghi log nếu chưa có trong 24h qua
-        if (!ipinfoToken) {
-            console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
-            const ipLog = new IPLog({ ip: clientIp });
-            await ipLog.save();
-            console.log(`IP ${clientIp} đã được ghi lại (chỉ IP).`);
-        } else {
-            const ipinfoUrl = `https://ipinfo.io/${clientIp}/json?token=${ipinfoToken}`;
-            try {
-                const response = await axios.get(ipinfoUrl);
-                const data = response.data;
-                let city = data.city || null;
-                let region = data.region || null;
-                let country = data.country || null;
-                let latitude = data.loc ? parseFloat(data.loc.split(',')[0]) : null;
-                let longitude = data.loc ? parseFloat(data.loc.split(',')[1]) : null;
-
-                const ipLog = new IPLog({
-                    ip: clientIp,
-                    city,
-                    region,
-                    country,
-                    latitude,
-                    longitude
-                });
+        if (!existingLog) { // Chỉ ghi log nếu chưa có trong 24h qua
+            if (!ipinfoToken) {
+                console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
+                const ipLog = new IPLog({ ip: clientIp });
                 await ipLog.save();
-                console.log(`IP ${clientIp} đã được ghi lại.`);
-            } catch (error) {
-                console.error('Lỗi khi thu thập và ghi IP (trang chính):', error.message);
-                // Trong trường hợp lỗi, vẫn cố gắng lưu IP cơ bản
+                console.log(`IP ${clientIp} đã được ghi lại (chỉ IP).`);
+            } else {
+                const ipinfoUrl = `https://ipinfo.io/${clientIp}/json?token=${ipinfoToken}`;
                 try {
-                    const ipLog = new IPLog({ ip: clientIp });
+                    const response = await axios.get(ipinfoUrl);
+                    const data = response.data;
+                    let city = data.city || null;
+                    let region = data.region || null;
+                    let country = data.country || null;
+                    let latitude = data.loc ? parseFloat(data.loc.split(',')[0]) : null;
+                    let longitude = data.loc ? parseFloat(data.loc.split(',')[1]) : null;
+
+                    const ipLog = new IPLog({
+                        ip: clientIp,
+                        city,
+                        region,
+                        country,
+                        latitude,
+                        longitude
+                    });
                     await ipLog.save();
-                    console.log(`IP ${clientIp} đã được ghi lại (có thể không đầy đủ do lỗi API).`);
-                } catch (saveError) {
-                    console.error('Lỗi khi cố gắng lưu IP sau khi lỗi API (trang chính):', saveError);
+                    console.log(`IP ${clientIp} đã được ghi lại.`);
+                } catch (error) {
+                    console.error('Lỗi khi thu thập và ghi IP (trang chính):', error.message);
+                    // Trong trường hợp lỗi, vẫn cố gắng lưu IP cơ bản
+                    try {
+                        const ipLog = new IPLog({ ip: clientIp });
+                        await ipLog.save();
+                        console.log(`IP ${clientIp} đã được ghi lại (có thể không đầy đủ do lỗi API).`);
+                    } catch (saveError) {
+                        console.error('Lỗi khi cố gắng lưu IP sau khi lỗi API (trang chính):', saveError);
+                    }
                 }
             }
+        } else {
+            console.log(`IP ${clientIp} đã được ghi trong 24 giờ qua. Bỏ qua ghi log.`);
         }
-    } else {
-        console.log(`IP ${clientIp} đã được ghi trong 24 giờ qua. Bỏ qua ghi log.`);
+    } catch (dbError) {
+        console.error('Lỗi khi kiểm tra hoặc lưu IP vào database:', dbError);
     }
+
 
     // Sau khi xử lý ghi log, phục vụ trang chính
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -194,9 +207,6 @@ app.post('/api/describe-location', async (req, res) => {
     }
 });
 
-// ---- Xóa route /capture-ip-secret vì nó không còn cần thiết ----
-// app.get('/capture-ip-secret', ...); // Xóa hoặc comment dòng này
-
 // ---- Trang quản lý IP Logs (có xác thực) ----
 app.use('/admin', basicAuth({
     users: {
@@ -223,14 +233,5 @@ app.get('/api/admin/ip-data', async (req, res) => {
 // Xử lý tất cả các yêu cầu GET khác mà không phải là '/' hoặc '/admin'
 // Điều này quan trọng để các file tĩnh khác trong public/ vẫn hoạt động
 app.get('*', (req, res) => {
-    // Nếu request không phải là '/' và không phải là file tĩnh, thì có thể là lỗi 404
-    // Hoặc đơn giản là chuyển hướng về trang chính nếu không tìm thấy route nào khác
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Khởi động máy chủ
-app.listen(port, () => {
-    console.log(`Máy chủ đang chạy trên cổng ${port}`);
-    console.log(`Mở trình duyệt tại http://localhost:${port}`);
-    console.log(`Trang quản lý IP: http://localhost:${port}/admin/ip-logs (Yêu cầu đăng nhập)`);
 });
