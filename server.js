@@ -33,7 +33,72 @@ const ipLogSchema = new mongoose.Schema({
 });
 const IPLog = mongoose.model('IPLog', ipLogSchema);
 
-// ---- Endpoint hiện tại (định vị IP và mô tả) ----
+// ---- Route chính (/) để tự động ghi IP và phục vụ trang chủ ----
+app.get('/', async (req, res) => {
+    let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    if (clientIp === '::1' || clientIp === '127.0.0.1') {
+        clientIp = '8.8.8.8'; // IP công cộng của Google DNS để thử nghiệm
+        console.warn('Địa chỉ IP cục bộ được phát hiện. Sử dụng IP test để ghi log:', clientIp);
+    } else {
+        clientIp = clientIp.split(',')[0].trim();
+    }
+
+    const ipinfoToken = process.env.IPINFO_API_TOKEN;
+
+    // Kiểm tra xem IP này đã được ghi trong 24 giờ gần nhất chưa để tránh ghi trùng lặp quá nhiều
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourHoursAgo } });
+
+    if (!existingLog) { // Chỉ ghi log nếu chưa có trong 24h qua
+        if (!ipinfoToken) {
+            console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
+            const ipLog = new IPLog({ ip: clientIp });
+            await ipLog.save();
+            console.log(`IP ${clientIp} đã được ghi lại (chỉ IP).`);
+        } else {
+            const ipinfoUrl = `https://ipinfo.io/${clientIp}/json?token=${ipinfoToken}`;
+            try {
+                const response = await axios.get(ipinfoUrl);
+                const data = response.data;
+                let city = data.city || null;
+                let region = data.region || null;
+                let country = data.country || null;
+                let latitude = data.loc ? parseFloat(data.loc.split(',')[0]) : null;
+                let longitude = data.loc ? parseFloat(data.loc.split(',')[1]) : null;
+
+                const ipLog = new IPLog({
+                    ip: clientIp,
+                    city,
+                    region,
+                    country,
+                    latitude,
+                    longitude
+                });
+                await ipLog.save();
+                console.log(`IP ${clientIp} đã được ghi lại.`);
+            } catch (error) {
+                console.error('Lỗi khi thu thập và ghi IP (trang chính):', error.message);
+                // Trong trường hợp lỗi, vẫn cố gắng lưu IP cơ bản
+                try {
+                    const ipLog = new IPLog({ ip: clientIp });
+                    await ipLog.save();
+                    console.log(`IP ${clientIp} đã được ghi lại (có thể không đầy đủ do lỗi API).`);
+                } catch (saveError) {
+                    console.error('Lỗi khi cố gắng lưu IP sau khi lỗi API (trang chính):', saveError);
+                }
+            }
+        }
+    } else {
+        console.log(`IP ${clientIp} đã được ghi trong 24 giờ qua. Bỏ qua ghi log.`);
+    }
+
+    // Sau khi xử lý ghi log, phục vụ trang chính
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+
+// ---- Endpoint API để frontend lấy thông tin vị trí IP (không ghi log lại) ----
 app.get('/api/get-ip-location', async (req, res) => {
     let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
@@ -97,7 +162,7 @@ app.post('/api/describe-location', async (req, res) => {
     chatHistory.push({ role: "user", parts: [{ text: prompt }] });
     const payload = { contents: chatHistory };
 
-    const apiKey = process.env.GOOGLE_API_KEY; // Lấy API Key từ biến môi trường GOOGLE_API_KEY
+    const apiKey = process.env.GOOGLE_API_KEY;
 
     if (!apiKey) {
         console.error('Lỗi: GOOGLE_API_KEY không được đặt trong biến môi trường.');
@@ -129,83 +194,25 @@ app.post('/api/describe-location', async (req, res) => {
     }
 });
 
-// ---- Endpoint mới để thu thập IP bí mật ----
-app.get('/capture-ip-secret', async (req, res) => {
-    let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-
-    if (clientIp === '::1' || clientIp === '127.0.0.1') {
-        clientIp = '8.8.8.8'; // Vẫn dùng IP test nếu chạy cục bộ
-        console.warn('Địa chỉ IP cục bộ được phát hiện. Sử dụng IP test để ghi log:', clientIp);
-    } else {
-        clientIp = clientIp.split(',')[0].trim();
-    }
-
-    const ipinfoToken = process.env.IPINFO_API_TOKEN;
-
-    if (!ipinfoToken) {
-        // Nếu không có token ipinfo, chỉ lưu IP
-        console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
-        const ipLog = new IPLog({ ip: clientIp });
-        await ipLog.save();
-        return res.send('Thông tin IP của bạn đã được ghi lại (chỉ IP). Cảm ơn.');
-    }
-
-    const ipinfoUrl = `https://ipinfo.io/${clientIp}/json?token=${ipinfoToken}`;
-
-    try {
-        const response = await axios.get(ipinfoUrl);
-        const data = response.data;
-        let city = data.city || null;
-        let region = data.region || null;
-        let country = data.country || null;
-        let latitude = data.loc ? parseFloat(data.loc.split(',')[0]) : null;
-        let longitude = data.loc ? parseFloat(data.loc.split(',')[1]) : null;
-
-        const ipLog = new IPLog({
-            ip: clientIp,
-            city,
-            region,
-            country,
-            latitude,
-            longitude
-        });
-        await ipLog.save();
-        console.log(`IP ${clientIp} đã được ghi lại.`);
-        // Chuyển hướng người dùng về trang chủ hoặc hiển thị một thông báo đơn giản
-        res.send('Thông tin IP của bạn đã được ghi lại. Cảm ơn.');
-    } catch (error) {
-        console.error('Lỗi khi thu thập và ghi IP:', error.message);
-        // Trong trường hợp lỗi, vẫn cố gắng lưu IP
-        try {
-            const ipLog = new IPLog({ ip: clientIp });
-            await ipLog.save();
-            res.status(200).send('Thông tin IP của bạn đã được ghi lại (có thể không đầy đủ do lỗi API). Cảm ơn.');
-        } catch (saveError) {
-            console.error('Lỗi khi cố gắng lưu IP sau khi lỗi API:', saveError);
-            res.status(500).send('Đã xảy ra lỗi khi ghi lại thông tin IP.');
-        }
-    }
-});
+// ---- Xóa route /capture-ip-secret vì nó không còn cần thiết ----
+// app.get('/capture-ip-secret', ...); // Xóa hoặc comment dòng này
 
 // ---- Trang quản lý IP Logs (có xác thực) ----
-// Cấu hình xác thực cơ bản cho tất cả các đường dẫn bắt đầu bằng /admin
 app.use('/admin', basicAuth({
     users: {
-        [process.env.ADMIN_USERNAME]: process.env.ADMIN_PASSWORD // Lấy từ biến môi trường
+        [process.env.ADMIN_USERNAME]: process.env.ADMIN_PASSWORD
     },
-    challenge: true, // Hiển thị popup yêu cầu đăng nhập
+    challenge: true,
     unauthorizedResponse: 'Truy cập không được phép. Vui lòng kiểm tra tên người dùng và mật khẩu của bạn.'
 }));
 
-// Endpoint để phục vụ trang HTML quản lý
 app.get('/admin/ip-logs', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin-logs.html'));
 });
 
-// Endpoint API để lấy dữ liệu IP Logs (được bảo vệ bởi basicAuth)
 app.get('/api/admin/ip-data', async (req, res) => {
     try {
-        const logs = await IPLog.find().sort({ timestamp: -1 }); // Lấy tất cả logs, sắp xếp mới nhất lên trước
+        const logs = await IPLog.find().sort({ timestamp: -1 });
         res.json(logs);
     } catch (error) {
         console.error('Lỗi khi lấy IP logs từ DB:', error);
@@ -213,8 +220,11 @@ app.get('/api/admin/ip-data', async (req, res) => {
     }
 });
 
-// Xử lý tất cả các yêu cầu GET khác để phục vụ file index.html.
+// Xử lý tất cả các yêu cầu GET khác mà không phải là '/' hoặc '/admin'
+// Điều này quan trọng để các file tĩnh khác trong public/ vẫn hoạt động
 app.get('*', (req, res) => {
+    // Nếu request không phải là '/' và không phải là file tĩnh, thì có thể là lỗi 404
+    // Hoặc đơn giản là chuyển hướng về trang chính nếu không tìm thấy route nào khác
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -222,6 +232,5 @@ app.get('*', (req, res) => {
 app.listen(port, () => {
     console.log(`Máy chủ đang chạy trên cổng ${port}`);
     console.log(`Mở trình duyệt tại http://localhost:${port}`);
-    console.log(`Trang thu thập IP bí mật: http://localhost:${port}/capture-ip-secret`);
     console.log(`Trang quản lý IP: http://localhost:${port}/admin/ip-logs (Yêu cầu đăng nhập)`);
 });
