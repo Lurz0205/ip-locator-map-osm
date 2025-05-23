@@ -108,7 +108,9 @@ async function generateLocationDescription() {
         if (data.error) {
             descriptionBox.innerHTML = `<p class="error-message">Lỗi: ${data.error}</p>`;
         } else {
-            descriptionBox.innerHTML = `<p>${data.description}</p>`; // Hiển thị mô tả
+            // Chuyển đổi văn bản Markdown sang HTML bằng marked.js
+            const htmlDescription = marked.parse(data.description);
+            descriptionBox.innerHTML = htmlDescription; // Hiển thị mô tả đã chuyển đổi
         }
     } catch (error) {
         console.error("Lỗi khi tạo mô tả địa điểm:", error);
