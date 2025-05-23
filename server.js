@@ -76,8 +76,8 @@ app.get('/api/get-ip-location', async (req, res) => {
         return res.status(500).json({
             error: 'Dịch vụ định vị IP chưa được cấu hình. Vui lòng đặt IPINFO_API_TOKEN.',
             ip: clientIp,
-            latitude: 0,
-            longitude: 0 // Trả về tọa độ 0,0 để không làm lỗi frontend
+            latitude: 0, // Giá trị mặc định
+            longitude: 0 // Giá trị mặc định
         });
     }
 
@@ -132,7 +132,7 @@ app.get('/api/get-ip-location', async (req, res) => {
 
 // ---- Endpoint API để frontend yêu cầu mô tả địa điểm từ Gemini ----
 app.post('/api/describe-location', async (req, res) => {
-    const { city, country } = req.body;
+    const { city, country } = req.body; // Lấy thành phố và quốc gia từ body request
 
     if (!city && !country) {
         return res.status(400).json({ error: 'Vui lòng cung cấp thành phố hoặc quốc gia để mô tả.' });
@@ -185,6 +185,14 @@ app.use('/admin', basicAuth({
     challenge: true, // Hiển thị popup đăng nhập
     unauthorizedResponse: 'Truy cập không được phép. Vui lòng kiểm tra tên người dùng và mật khẩu của bạn.'
 }));
+
+// === THÊM ROUTE NÀY ĐỂ PHỤC VỤ admin.html ===
+// Route này sẽ được kích hoạt sau khi basicAuth đã xác thực thành công
+app.get('/admin', (req, res) => {
+    console.log('--- Yêu cầu đã nhận trên route /admin, phục vụ admin.html ---');
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+// ===========================================
 
 // Endpoint API để lấy dữ liệu IP Logs (được bảo vệ bởi basicAuth)
 app.get('/api/admin/ip-data', async (req, res) => {
