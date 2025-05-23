@@ -18,7 +18,7 @@ async function loadIpLogs() {
         loadingMessage.style.display = 'none'; // Ẩn thông báo tải
 
         if (logs.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="8">Chưa có IP nào được ghi lại.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="9">Chưa có IP nào được ghi lại.</td></tr>'; // colspan tăng lên 9
             return;
         }
 
@@ -32,7 +32,24 @@ async function loadIpLogs() {
             row.insertCell().textContent = log.country || 'N/A';
             row.insertCell().textContent = log.latitude ? log.latitude.toFixed(4) : 'N/A';
             row.insertCell().textContent = log.longitude ? log.longitude.toFixed(4) : 'N/A';
-            row.insertCell().textContent = new Date(log.timestamp).toLocaleString('vi-VN'); // Định dạng ngày giờ
+            // Cập nhật múi giờ Việt Nam
+            row.insertCell().textContent = new Date(log.timestamp).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+
+            // Thêm cột hành động và nút "Xem bản đồ"
+            const actionCell = row.insertCell();
+            const viewMapButton = document.createElement('button');
+            viewMapButton.textContent = 'Xem bản đồ';
+            viewMapButton.className = 'action-button'; // Sử dụng lại style button đã có
+            viewMapButton.style.backgroundColor = '#007bff'; // Màu xanh dương cho nút xem bản đồ
+            viewMapButton.style.padding = '5px 10px';
+            viewMapButton.style.fontSize = '0.9em';
+            viewMapButton.style.boxShadow = 'none'; // Loại bỏ bóng để nút nhỏ hơn
+            viewMapButton.style.transform = 'none'; // Loại bỏ hiệu ứng hover không cần thiết
+            viewMapButton.addEventListener('click', () => {
+                // Chuyển hướng đến trang chính với tham số URL
+                window.location.href = `/?ip=${log.ip}&lat=${log.latitude}&lon=${log.longitude}&city=${log.city || ''}&country=${log.country || ''}`;
+            });
+            actionCell.appendChild(viewMapButton);
         });
 
     } catch (error) {
@@ -42,7 +59,7 @@ async function loadIpLogs() {
     }
 }
 
-// Hàm để xóa tất cả IP logs
+// Hàm để xóa tất cả IP logs (giữ nguyên logic đã cung cấp)
 async function clearAllIpLogs() {
     // Hiển thị hộp thoại xác nhận tùy chỉnh
     const confirmBox = document.createElement('div');
@@ -79,18 +96,17 @@ async function clearAllIpLogs() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Tải IP logs khi trang được tải
-    await loadIpLogs();
+    await loadIpLogs(); // Tải IP logs khi trang được tải
 
     const clearButton = document.getElementById('clear-all-logs-btn');
     if (clearButton) {
         clearButton.addEventListener('click', async () => {
-            const confirmed = await clearAllIpLogs(); // Gọi hàm xác nhận tùy chỉnh
+            const confirmed = await clearAllIpLogs();
 
             if (confirmed) {
                 try {
                     const response = await fetch('/api/admin/ip-data', {
-                        method: 'DELETE', // Sử dụng phương thức DELETE
+                        method: 'DELETE',
                     });
 
                     if (!response.ok) {
@@ -99,11 +115,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
 
                     const result = await response.json();
-                    alert(result.message); // Hiển thị thông báo thành công (có thể thay bằng modal tùy chỉnh)
+                    alert(result.message);
                     await loadIpLogs(); // Tải lại danh sách sau khi xóa
                 } catch (error) {
                     console.error('Lỗi khi xóa IP logs:', error);
-                    alert(`Không thể xóa logs: ${error.message}`); // Hiển thị lỗi (có thể thay bằng modal tùy chỉnh)
+                    alert(`Không thể xóa logs: ${error.message}`);
                 }
             }
         });
