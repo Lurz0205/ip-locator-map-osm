@@ -4,8 +4,8 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
-const mongoose = require('mongoose'); // Thư viện MongoDB
-const basicAuth = require = require('express-basic-auth'); // Thư viện xác thực cơ bản
+const mongoose = require('mongoose');
+const basicAuth = require('express-basic-auth'); // Đã sửa cú pháp require
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -13,17 +13,26 @@ const port = process.env.PORT || 3000;
 // === DÒNG LOG GLOBAL (Chạy cho MỌI yêu cầu) ===
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] Request received: ${req.method} ${req.url}`);
-    next(); // Chuyển quyền điều khiển cho middleware/route handler tiếp theo
+    next();
 });
 // ======================================
 
 // Middleware để phân tích JSON trong body của request
 app.use(express.json());
 
+// === ĐẶT express.static Ở ĐÂY (TRƯỚC HẦU HẾT CÁC ROUTES KHÁC) ===
+// Điều này đảm bảo rằng tất cả các file tĩnh (HTML, CSS, JS, images)
+// từ thư mục 'public' sẽ được phục vụ trước tiên.
+// Nếu một yêu cầu phù hợp với một file tĩnh, nó sẽ được xử lý ở đây
+// và KHÔNG đi đến các routes Express bên dưới.
+app.use(express.static(path.join(__dirname, 'public')));
+// =============================================================
+
+
 // Kết nối MongoDB Atlas
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => {
-        console.log('Connected to MongoDB Atlas successfully.'); // Log khi kết nối thành công
+        console.log('Connected to MongoDB Atlas successfully.');
 
         // Khởi động máy chủ Express CHỈ KHI kết nối MongoDB thành công
         app.listen(port, () => {
@@ -34,7 +43,6 @@ mongoose.connect(process.env.MONGODB_URI)
     })
     .catch(err => {
         console.error('MongoDB connection error. App will not start:', err);
-        // Quan trọng: Thoát ứng dụng nếu không kết nối được MongoDB
         process.exit(1);
     });
 
@@ -50,73 +58,18 @@ const ipLogSchema = new mongoose.Schema({
 });
 const IPLog = mongoose.model('IPLog', ipLogSchema);
 
-// ---- ROUTE KIỂM TRA MỚI ----
-// Truy cập https://your-app-name.onrender.com/test-route để kiểm tra
-app.get('/test-route', (req, res) => {
-    console.log('--- Yêu cầu đã nhận trên route /test-route ---');
-    res.send('Đây là trang kiểm tra! Nếu bạn thấy dòng này, route đang hoạt động.');
-});
-// --------------------------
+// ---- ROUTE KIỂM TRA ----
+// app.get('/test-route', ...); // Nếu bạn muốn giữ route này, hãy đặt nó ở đây
+
 
 // ---- Route chính (/) để tự động ghi IP và phục vụ trang chủ ----
-app.get('/', async (req, res) => {
-    console.log('--- Yêu cầu đã nhận trên route / ---');
-
-    let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-
-    if (clientIp === '::1' || clientIp === '127.0.0.1') {
-        clientIp = '8.8.8.8'; // IP công cộng của Google DNS để thử nghiệm
-        console.warn('Địa chỉ IP cục bộ được phát hiện. Sử dụng IP test để ghi log:', clientIp);
-    } else {
-        clientIp = clientIp.split(',')[0].trim();
-    }
-
-    const ipinfoToken = process.env.IPINFO_API_TOKEN;
-
-    try {
-        if (!ipinfoToken) {
-            console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
-            const ipLog = new IPLog({ ip: clientIp });
-            await ipLog.save();
-            console.log(`IP ${clientIp} đã được ghi lại (chỉ IP).`);
-        } else {
-            const ipinfoUrl = `https://ipinfo.io/${clientIp}/json?token=${ipinfoToken}`;
-            try {
-                const response = await axios.get(ipinfoUrl);
-                const data = response.data;
-                let city = data.city || null;
-                let region = data.region || null;
-                let country = data.country || null;
-                let latitude = data.loc ? parseFloat(data.loc.split(',')[0]) : null;
-                let longitude = data.loc ? parseFloat(data.loc.split(',')[1]) : null;
-
-                const ipLog = new IPLog({
-                    ip: clientIp,
-                    city,
-                    region,
-                    country,
-                    latitude,
-                    longitude
-                });
-                await ipLog.save();
-                console.log(`IP ${clientIp} đã được ghi lại.`);
-            } catch (error) {
-                console.error('Lỗi khi thu thập và ghi IP (trang chính):', error.message);
-                try {
-                    const ipLog = new IPLog({ ip: clientIp });
-                    await ipLog.save();
-                    console.log(`IP ${clientIp} đã được ghi lại (có thể không đầy đủ do lỗi API).`);
-                } catch (saveError) {
-                    console.error('Lỗi khi cố gắng lưu IP sau khi lỗi API (trang chính):', saveError);
-                }
-            }
-        }
-    } catch (dbError) {
-        console.error('Lỗi khi kiểm tra hoặc lưu IP vào database:', dbError);
-    }
-
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// CHỈ CẦN ĐẶT NẾU index.html KHÔNG PHẢI LÀ FILE TĨNH ĐƯỢC PHỤC VỤ MẶC ĐỊNH BỞI express.static
+// (nhưng chúng ta sẽ để cho express.static tự xử lý index.html)
+// app.get('/', async (req, res) => {
+//     console.log('--- Yêu cầu đã nhận trên route / ---');
+//     // ... logic ghi IP ...
+//     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// });
 
 
 // ---- Endpoint API để frontend lấy thông tin vị trí IP (không ghi log lại) ----
@@ -124,8 +77,8 @@ app.get('/api/get-ip-location', async (req, res) => {
     let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
     if (clientIp === '::1' || clientIp === '127.0.0.1') {
-        clientIp = '8.8.8.8'; // IP công cộng của Google DNS để thử nghiệm
-        console.warn('Địa chỉ IP cục bộ được phát hiện. Sử dụng IP test:', clientIp);
+        clientIp = '8.8.8.8';
+        console.warn('Địa chỉ IP cục bộ được phát hiện. Sử dụng IP test để ghi log:', clientIp);
     } else {
         clientIp = clientIp.split(',')[0].trim();
     }
@@ -224,10 +177,12 @@ app.use('/admin', basicAuth({
     unauthorizedResponse: 'Truy cập không được phép. Vui lòng kiểm tra tên người dùng và mật khẩu của bạn.'
 }));
 
+// Endpoint để phục vụ trang HTML quản lý
 app.get('/admin/ip-logs', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin-logs.html'));
 });
 
+// Endpoint API để lấy dữ liệu IP Logs (được bảo vệ bởi basicAuth)
 app.get('/api/admin/ip-data', async (req, res) => {
     try {
         const logs = await IPLog.find().sort({ timestamp: -1 });
@@ -238,15 +193,11 @@ app.get('/api/admin/ip-data', async (req, res) => {
     }
 });
 
-// === THAY ĐỔI CÁCH PHỤC VỤ FILE TĨNH Ở ĐÂY ===
-// Phục vụ các file tĩnh (JS, CSS, images) trực tiếp từ thư mục 'public'.
-// Đặt middleware này ở đây để các route cụ thể (như '/', '/test-route', '/admin') được ưu tiên.
-// Cụ thể là nó sẽ phục vụ các file như /style.css, /script.js, /script-admin-v2.js
-app.use(express.static(path.join(__dirname, 'public')));
-// ===========================================
-
-// Xử lý tất cả các yêu cầu GET khác mà không phải là một route được định nghĩa hoặc một file tĩnh.
-// Điều này sẽ trả về index.html cho các đường dẫn không tồn tại.
+// === ĐẶT ROUTE CATCH-ALL CUỐI CÙNG ===
+// Điều này sẽ xử lý các yêu cầu không khớp với bất kỳ route nào ở trên
+// VÀ KHÔNG PHẢI LÀ MỘT FILE TĨNH được phục vụ bởi express.static.
 app.get('*', (req, res) => {
+    // Nếu yêu cầu không phải là file tĩnh, cũng không phải route API hay /admin/ip-logs,
+    // thì trả về index.html như một fallback SPA.
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
