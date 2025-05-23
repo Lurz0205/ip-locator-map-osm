@@ -5,23 +5,20 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const mongoose = require('mongoose'); // Thư viện MongoDB
-const basicAuth = require('express-basic-auth'); // Thư viện xác thực cơ bản
+const basicAuth = require = require('express-basic-auth'); // Thư viện xác thực cơ bản
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// === DÒNG LOG MỚI CẦN THÊM VÀO ĐÂY ===
+// === DÒNG LOG GLOBAL ===
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] Request received: ${req.method} ${req.url}`);
     next(); // Chuyển quyền điều khiển cho middleware/route handler tiếp theo
 });
-// ======================================
+// ======================
 
 // Middleware để phân tích JSON trong body của request
 app.use(express.json());
-
-// Cấu hình Express để phục vụ các file tĩnh (HTML, CSS, JS) từ thư mục 'public'
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Kết nối MongoDB Atlas
 mongoose.connect(process.env.MONGODB_URI)
@@ -38,7 +35,6 @@ mongoose.connect(process.env.MONGODB_URI)
     .catch(err => {
         console.error('MongoDB connection error. App will not start:', err);
         // Quan trọng: Thoát ứng dụng nếu không kết nối được MongoDB
-        // Điều này sẽ khiến Render báo lỗi rõ ràng hơn thay vì chỉ "No open ports detected"
         process.exit(1);
     });
 
@@ -55,8 +51,9 @@ const ipLogSchema = new mongoose.Schema({
 const IPLog = mongoose.model('IPLog', ipLogSchema);
 
 // ---- Route chính (/) để tự động ghi IP và phục vụ trang chủ ----
+// ĐẶT ROUTE NÀY TRƯỚC app.use(express.static) ĐỂ NÓ ĐƯỢC XỬ LÝ TRƯỚC
 app.get('/', async (req, res) => {
-    console.log('--- Yêu cầu đã nhận trên route / ---'); // Dòng log CŨ hơn
+    console.log('--- Yêu cầu đã nhận trên route / ---'); // Dòng log này bây giờ sẽ xuất hiện
 
     let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
@@ -69,12 +66,11 @@ app.get('/', async (req, res) => {
 
     const ipinfoToken = process.env.IPINFO_API_TOKEN;
 
-    // // TẠM THỜI VÔ HIỆU HÓA KIỂM TRA 24 GIỜ ĐỂ KIỂM TRA
+    // // TẠM THỜI VÔ HIỆU HÓA KIỂM TRA 24 GIỜ ĐỂ KIỂM TRA (như đã có)
     // const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    try { // Thêm try-catch để bắt lỗi từ IPLog.findOne
+    try {
         // const existingLog = await IPLog.findOne({ ip: clientIp, timestamp: { $gte: twentyFourFourHoursAgo } });
-
-        // if (!existingLog) { // Tạm thời bỏ qua điều kiện này để ghi log mọi lúc
+        // if (!existingLog) {
             if (!ipinfoToken) {
                 console.warn('IPINFO_API_TOKEN không được đặt. Chỉ lưu IP mà không có thông tin vị trí.');
                 const ipLog = new IPLog({ ip: clientIp });
@@ -103,7 +99,6 @@ app.get('/', async (req, res) => {
                     console.log(`IP ${clientIp} đã được ghi lại.`);
                 } catch (error) {
                     console.error('Lỗi khi thu thập và ghi IP (trang chính):', error.message);
-                    // Trong trường hợp lỗi, vẫn cố gắng lưu IP cơ bản
                     try {
                         const ipLog = new IPLog({ ip: clientIp });
                         await ipLog.save();
@@ -120,7 +115,7 @@ app.get('/', async (req, res) => {
         console.error('Lỗi khi kiểm tra hoặc lưu IP vào database:', dbError);
     }
 
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'public', 'index.html')); // Phục vụ index.html SAU KHI ghi log
 });
 
 
@@ -242,6 +237,12 @@ app.get('/api/admin/ip-data', async (req, res) => {
         res.status(500).json({ error: 'Không thể tải dữ liệu IP từ cơ sở dữ liệu.' });
     }
 });
+
+// === DI CHUYỂN DÒNG NÀY XUỐNG ĐÂY ===
+// Cấu hình Express để phục vụ các file tĩnh (CSS, JS, images, etc.) từ thư mục 'public'
+// ĐẶT SAU CÁC ROUTES CỤ THỂ (như app.get('/') ở trên) ĐỂ CÁC ROUTES ĐÓ ĐƯỢC ƯU TIÊN
+app.use(express.static(path.join(__dirname, 'public')));
+// ===================================
 
 // Xử lý tất cả các yêu cầu GET khác mà không phải là '/' hoặc '/admin'
 // Điều này quan trọng để các file tĩnh khác trong public/ vẫn hoạt động
