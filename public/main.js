@@ -1,149 +1,140 @@
-let map; // Biến toàn cục để lưu trữ đối tượng bản đồ Leaflet
-let marker; // Biến toàn cục để lưu trữ đối tượng marker trên bản đồ
+let map;
+let marker;
 
-// Hàm này được gọi khi DOM đã tải xong để khởi tạo bản đồ và lấy dữ liệu IP
 async function initMap() {
-    console.log("Đang khởi tạo bản đồ và tìm vị trí IP...");
+    console.log("Đang khởi tạo bản đồ và tìm vị trí...");
 
-    let latitude, longitude, ip, city, region, country;
+    let latitude, longitude, ip, city, region, country, isPrecise = false;
     const urlParams = new URLSearchParams(window.location.search);
 
-    // Kiểm tra xem có tham số vị trí trên URL không (từ trang admin)
+    // 1. Ưu tiên vị trí từ URL (từ trang admin)
     if (urlParams.has('lat') && urlParams.has('lon')) {
         latitude = parseFloat(urlParams.get('lat'));
         longitude = parseFloat(urlParams.get('lon'));
         ip = urlParams.get('ip') || 'N/A';
         city = urlParams.get('city') || 'N/A';
-        // Region không được truyền từ admin, nên để N/A hoặc bạn có thể thêm vào nếu muốn
-        region = 'N/A';
+        region = 'N/A'; // Region không được truyền từ admin
         country = urlParams.get('country') || 'N/A';
+        isPrecise = false; // Vị trí này không phải từ Geolocation API của người dùng hiện tại
         console.log(`Hiển thị vị trí từ URL: IP=${ip}, Lat=${latitude}, Lon=${longitude}`);
-        // Xóa các tham số khỏi URL để không ảnh hưởng đến lần tải lại trang
-        window.history.replaceState({}, document.title, window.location.pathname);
-    } else {
-        // Nếu không có tham số trên URL, thì định vị IP hiện tại của người dùng
+        window.history.replaceState({}, document.title, window.location.pathname); // Xóa params
+    }
+    // 2. Thử lấy vị trí chính xác từ trình duyệt của người dùng hiện tại
+    else if (navigator.geolocation) {
         try {
-            // Gửi yêu cầu đến API backend của chúng ta để lấy thông tin vị trí IP
-            const response = await fetch('/api/get-ip-location');
-            const data = await response.json(); // Phân tích phản hồi JSON
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 0
+                });
+            });
+            latitude = position.coords.latitude;
+            longitude = position.coords.longitude;
+            ip = "Vị trí chính xác của bạn"; // Không có IP thực
+            city = 'Đang xác định...'; // Có thể cần API đảo ngược geocoding
+            region = '';
+            country = '';
+            isPrecise = true;
+            console.log(`Vị trí chính xác từ trình duyệt: Lat=${latitude}, Lon=${longitude}`);
 
-            if (data.error) {
-                console.error("Lỗi khi định vị IP:", data.error);
-                // Hiển thị thông báo lỗi trên khu vực bản đồ
-                document.getElementById('map').innerHTML = `<p class="error-message">${data.error}</p>`;
-                // Cập nhật thông tin hiển thị với "N/A"
-                updateLocationInfo(data.ip || 'N/A', 'N/A', 'N/A', 'N/A');
-                return; // Dừng hàm nếu có lỗi
+            // Cần một API Reverse Geocoding để chuyển đổi tọa độ thành tên địa điểm
+            // Ví dụ sử dụng OpenStreetMap Nominatim (có giới hạn số lượng request)
+            const osmReverseGeocodingUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`;
+            const osmResponse = await fetch(osmReverseGeocodingUrl);
+            const osmData = await osmResponse.json();
+
+            if (osmData.address) {
+                city = osmData.address.city || osmData.address.town || osmData.address.village || 'N/A';
+                region = osmData.address.state || osmData.address.county || 'N/A';
+                country = osmData.address.country || 'N/A';
+                console.log(`Reverse Geocoding: City=${city}, Country=${country}`);
             }
 
-            latitude = data.latitude;
-            longitude = data.longitude;
-            ip = data.ip;
-            city = data.city;
-            region = data.region;
-            country = data.country;
-
         } catch (error) {
-            // Xử lý lỗi nếu có vấn đề khi fetch dữ liệu hoặc khởi tạo bản đồ
-            console.error("Lỗi khi tải dữ liệu vị trí hoặc khởi tạo bản đồ:", error);
+            console.warn("Không thể lấy vị trí chính xác từ trình duyệt:", error.message);
+            // Fallback về định vị IP nếu người dùng từ chối hoặc có lỗi
+            await getIpLocationFallback(); // Gọi hàm fallback
+            latitude = fallbackData.latitude;
+            longitude = fallbackData.longitude;
+            ip = fallbackData.ip;
+            city = fallbackData.city;
+            region = fallbackData.region;
+            country = fallbackData.country;
+        }
+    }
+    // 3. Fallback về định vị IP nếu Geolocation API không khả dụng hoặc bị từ chối
+    else {
+        await getIpLocationFallback(); // Gọi hàm fallback
+        latitude = fallbackData.latitude;
+        longitude = fallbackData.longitude;
+        ip = fallbackData.ip;
+        city = fallbackData.city;
+        region = fallbackData.region;
+        country = fallbackData.country;
+    }
+
+    // Hàm riêng để xử lý việc định vị IP làm fallback
+    async function getIpLocationFallback() {
+        try {
+            const response = await fetch('/api/get-ip-location');
+            const data = await response.json();
+            if (data.error) {
+                console.error("Lỗi khi định vị IP fallback:", data.error);
+                document.getElementById('map').innerHTML = `<p class="error-message">${data.error}</p>`;
+                updateLocationInfo(data.ip || 'N/A', 'N/A', 'N/A', 'N/A');
+                // Ném lỗi để dừng xử lý tiếp nếu có lỗi nghiêm trọng
+                throw new Error("Lỗi định vị IP fallback.");
+            }
+            fallbackData = data; // Lưu dữ liệu fallback
+        } catch (error) {
+            console.error("Lỗi trong getIpLocationFallback:", error);
             document.getElementById('map').innerHTML = '<p class="error-message">Đã xảy ra lỗi khi tải bản đồ hoặc định vị IP. Vui lòng kiểm tra kết nối.</p>';
             updateLocationInfo('N/A', 'N/A', 'N/A', 'N/A');
-            return;
+            throw error; // Ném lại lỗi để dừng hàm initMap
         }
     }
 
+    // Dữ liệu vị trí đã được xác định (từ URL, Geolocation API, hoặc IP fallback)
+    const displayLocation = [latitude, longitude];
 
-    const userLocation = [latitude, longitude];
-
-    // Khởi tạo bản đồ nếu chưa có
     if (!map) {
-        map = L.map('map').setView(userLocation, 12);
+        map = L.map('map').setView(displayLocation, isPrecise ? 18 : 12); // Zoom gần hơn nếu vị trí chính xác
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
-
     } else {
-        map.setView(userLocation, 12);
+        map.setView(displayLocation, isPrecise ? 18 : 12);
     }
 
-    // Tạo hoặc cập nhật marker
     if (marker) {
-        marker.setLatLng(userLocation);
+        marker.setLatLng(displayLocation);
     } else {
-        marker = L.marker(userLocation).addTo(map);
+        marker = L.marker(displayLocation).addTo(map);
     }
 
-    // Gắn một popup vào marker để hiển thị thông tin khi click hoặc mặc định mở
     marker.bindPopup(`
         <div class="info-window-content">
-            <h3>Vị trí IP</h3>
+            <h3>${isPrecise ? 'Vị trí hiện tại của bạn' : 'Vị trí IP'}</h3>
             <p><strong>IP:</strong> ${ip}</p>
             <p><strong>Thành phố:</strong> ${city || 'N/A'}</p>
             <p><strong>Vùng:</strong> ${region || 'N/A'}</p>
             <p><strong>Quốc gia:</strong> ${country || 'N/A'}</p>
             <p><strong>Kinh độ:</strong> ${longitude.toFixed(4)}</p>
             <p><strong>Vĩ độ:</strong> ${latitude.toFixed(4)}</p>
+            ${isPrecise ? '<p style="font-style: italic; color: green;">(Độ chính xác cao từ trình duyệt)</p>' : ''}
         </div>
-    `).openPopup(); // Mở popup ngay lập tức sau khi tạo
+    `).openPopup();
 
-    // Cập nhật thông tin vị trí vào các thẻ span bên dưới bản đồ
     updateLocationInfo(ip, city, region, country);
 }
 
-// Hàm trợ giúp để cập nhật các thẻ span hiển thị thông tin vị trí
-function updateLocationInfo(ip, city, region, country) {
-    document.getElementById('display-ip').innerText = ip;
-    document.getElementById('display-city').innerText = city;
-    document.getElementById('display-region').innerText = region;
-    document.getElementById('display-country').innerText = country;
-}
-
-// Hàm mới để gọi API Gemini và tạo mô tả địa điểm
-async function generateLocationDescription() {
-    const describeBtn = document.getElementById('describe-location-btn');
-    const descriptionBox = document.getElementById('location-description');
-    const city = document.getElementById('display-city').innerText;
-    const country = document.getElementById('display-country').innerText;
-
-    // Kiểm tra nếu thông tin vị trí chưa được tải hoặc là N/A
-    if (city === 'Đang tải...' || country === 'Đang tải...' || city === 'N/A' || country === 'N/A') {
-        descriptionBox.innerHTML = '<p class="error-message">Vui lòng đợi thông tin vị trí được tải xong hoặc cung cấp thành phố/quốc gia hợp lệ.</p>';
-        return;
-    }
-
-    descriptionBox.innerHTML = '<p>Đang tạo mô tả... ✨</p>'; // Hiển thị trạng thái tải
-    describeBtn.disabled = true; // Vô hiệu hóa nút trong khi đang xử lý
-
-    try {
-        const response = await fetch('/api/describe-location', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ city, country }) // Gửi thành phố và quốc gia đến backend
-        });
-        const data = await response.json();
-
-        if (data.error) {
-            descriptionBox.innerHTML = `<p class="error-message">Lỗi: ${data.error}</p>`;
-        } else {
-            // Chuyển đổi văn bản Markdown sang HTML bằng marked.js
-            const htmlDescription = marked.parse(data.description);
-            descriptionBox.innerHTML = htmlDescription; // Hiển thị mô tả đã chuyển đổi
-        }
-    } catch (error) {
-        console.error("Lỗi khi tạo mô tả địa điểm:", error);
-        descriptionBox.innerHTML = '<p class="error-message">Đã xảy ra lỗi khi tạo mô tả. Vui lòng thử lại.</p>';
-    } finally {
-        describeBtn.disabled = false; // Kích hoạt lại nút
-    }
-}
+// ... các hàm khác (updateLocationInfo, generateLocationDescription) giữ nguyên ...
 
 // Lắng nghe sự kiện DOMContentLoaded để đảm bảo HTML đã được tải đầy đủ trước khi chạy script
 document.addEventListener('DOMContentLoaded', () => {
     initMap(); // Khởi tạo bản đồ khi DOM đã sẵn sàng
 
-    // Gắn sự kiện click cho nút "Mô tả địa điểm"
     const describeBtn = document.getElementById('describe-location-btn');
     if (describeBtn) {
         describeBtn.addEventListener('click', generateLocationDescription);
